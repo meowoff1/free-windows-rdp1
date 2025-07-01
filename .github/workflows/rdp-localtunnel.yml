@@ -1,0 +1,121 @@
+name: 🖥️ Free Windows RDP - LocalTunnel
+
+on: 
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360  # 6 hours maximum
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        
+    - name: 📦 Install LocalTunnel
+      run: |
+        Write-Host "📦 Installing LocalTunnel..."
+        npm install -g localtunnel
+        Write-Host "✅ LocalTunnel installed successfully!"
+      
+    - name: 🔧 Enable RDP Service
+      run: |
+        Write-Host "🚀 Setting up Windows RDP..."
+        
+        # Enable Remote Desktop
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        
+        # Enable RDP through Windows Firewall
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        
+        # Disable Network Level Authentication for easier connection
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
+        
+        # Set strong password for runneradmin user
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "RDP@LocalTunnel2024!" -Force)
+        
+        # Add to Remote Desktop Users group
+        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "runneradmin" -ErrorAction SilentlyContinue
+        
+        Write-Host "✅ RDP enabled successfully!"
+
+    - name: 🌐 Start LocalTunnel
+      run: |
+        Write-Host "🌐 Starting LocalTunnel for RDP..."
+        
+        # Generate random subdomain
+        $randomId = Get-Random -Minimum 1000 -Maximum 9999
+        $subdomain = "rdp-gh-$randomId"
+        
+        Write-Host "🔗 Tunnel subdomain: $subdomain"
+        
+        # Start LocalTunnel in background
+        Start-Process -FilePath "cmd" -ArgumentList "/c", "lt --port 3389 --subdomain $subdomain" -WindowStyle Hidden
+        
+        Write-Host "⏳ Waiting for tunnel to establish..."
+        Start-Sleep -Seconds 10
+        
+        $tunnelUrl = "https://$subdomain.loca.lt"
+        Write-Host "🔗 Tunnel URL: $tunnelUrl"
+        Write-Host "📋 Use this URL to connect via RDP"
+
+    - name: 📊 System Information
+      run: |
+        Write-Host "=================================="
+        Write-Host "🖥️  SYSTEM INFORMATION"
+        Write-Host "=================================="
+        Write-Host "💻 OS: $(Get-ComputerInfo | Select-Object -ExpandProperty WindowsProductName)"
+        Write-Host "🧠 RAM: $([math]::Round((Get-ComputerInfo).TotalPhysicalMemory / 1GB, 2)) GB"
+        Write-Host "⚡ CPU: $(Get-ComputerInfo | Select-Object -ExpandProperty CsProcessors | Select-Object -First 1 -ExpandProperty Name)"
+        Write-Host "💾 Disk: $([math]::Round((Get-PSDrive C | Select-Object -ExpandProperty Free) / 1GB, 2)) GB Free"
+        Write-Host "🌐 IP: $(Invoke-RestMethod -Uri 'https://api.ipify.org' -ErrorAction SilentlyContinue)"
+        Write-Host "=================================="
+
+    - name: 🔑 Display Connection Details
+      run: |
+        Write-Host "=================================="
+        Write-Host "🖥️  RDP CONNECTION DETAILS"
+        Write-Host "=================================="
+        Write-Host "👤 Username: runneradmin"
+        Write-Host "🔑 Password: RDP@LocalTunnel2024!"
+        Write-Host "🌐 Tunnel: Check LocalTunnel output above"
+        Write-Host "=================================="
+        Write-Host "📝 Instructions:"
+        Write-Host "1. Copy the tunnel URL from above"
+        Write-Host "2. Use any RDP client to connect"
+        Write-Host "3. Enter the credentials above"
+        Write-Host "=================================="
+        Write-Host "⏰ Session Duration: 6 hours maximum"
+        Write-Host "🔄 Re-run this workflow for new session"
+        Write-Host "=================================="
+
+    - name: 🔄 Keep Session Active
+      run: |
+        Write-Host "🟢 Session is now active!"
+        Write-Host "⏰ Started at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        Write-Host "🛑 Click 'Cancel workflow' to stop the session"
+        Write-Host ""
+        
+        $startTime = Get-Date
+        $endTime = $startTime.AddHours(6)
+        
+        while ((Get-Date) -lt $endTime) {
+            $remaining = $endTime - (Get-Date)
+            $hours = [math]::Floor($remaining.TotalHours)
+            $minutes = $remaining.Minutes
+            
+            Write-Host "🟢 Session Active - Time Remaining: $hours hours $minutes minutes"
+            
+            # Show some activity every 5 minutes
+            Start-Sleep -Seconds 300
+        }
+        
+        Write-Host "⏰ 6-hour limit reached. Session ending..."
+        Write-Host "🔄 Run the workflow again for a new session!"
