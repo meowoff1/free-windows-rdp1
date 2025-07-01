@@ -1,0 +1,60 @@
+name: 🖥️ Free Windows Desktop - VNC
+
+on: 
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Setup VNC Server
+      run: |
+        Write-Host "🚀 Setting up VNC Desktop..."
+        
+        # Download TightVNC
+        $vncUrl = "https://www.tightvnc.com/download/2.8.81/tightvnc-2.8.81-gpl-setup-64bit.msi"
+        Invoke-WebRequest -Uri $vncUrl -OutFile "tightvnc.msi"
+        
+        # Install TightVNC silently
+        Start-Process msiexec.exe -Wait -ArgumentList '/i tightvnc.msi /quiet /norestart ADDLOCAL="Server" SERVER_REGISTER_AS_SERVICE=1 SERVER_ADD_FIREWALL_EXCEPTION=1 VIEWER_ASSOCIATE_VNC_EXTENSION=1 SERVER_ALLOW_SAS=1 SET_USEVNCAUTHENTICATION=1 VALUE_OF_USEVNCAUTHENTICATION=1 SET_PASSWORD=1 VALUE_OF_PASSWORD=123456'
+        
+        # Start VNC service
+        Start-Service tvnserver
+        
+        Write-Host "✅ VNC Server started on port 5900"
+
+    - name: 🌐 Setup HTTP Tunnel
+      run: |
+        Write-Host "🌐 Setting up HTTP tunnel..."
+        
+        # Install Node.js and localtunnel
+        npm install -g localtunnel
+        
+        # Start tunnel for VNC
+        Start-Process -FilePath "cmd" -ArgumentList "/c", "lt --port 5900 --subdomain vnc-$(Get-Random -Min 1000 -Max 9999)" -WindowStyle Hidden
+        
+        Start-Sleep -Seconds 10
+        Write-Host "🔗 VNC tunnel started!"
+
+    - name: 🔑 Display Connection Details
+      run: |
+        Write-Host "=================================="
+        Write-Host "🖥️  VNC CONNECTION DETAILS"
+        Write-Host "=================================="
+        Write-Host "🌐 Connect via web browser to tunnel URL"
+        Write-Host "🔑 VNC Password: 123456"
+        Write-Host "=================================="
+
+    - name: 🔄 Keep Session Active
+      run: |
+        Write-Host "🟢 VNC Session Active!"
+        $endTime = (Get-Date).AddHours(6)
+        while ((Get-Date) -lt $endTime) {
+            Start-Sleep -Seconds 300
+            Write-Host "🟢 Session Active"
+        }
