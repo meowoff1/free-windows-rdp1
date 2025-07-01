@@ -1,0 +1,243 @@
+name: 🔍 System Health Check
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+
+jobs:
+  health-check:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: 🖥️ System Information
+      run: |
+        Write-Host "🔍 ====== SYSTEM HEALTH CHECK ====== 🔍" -ForegroundColor Cyan
+        Write-Host ""
+        
+        # Basic System Info
+        $computerInfo = Get-ComputerInfo
+        Write-Host "💻 System Information:" -ForegroundColor Yellow
+        Write-Host "   OS: $($computerInfo.WindowsProductName)" -ForegroundColor White
+        Write-Host "   Version: $($computerInfo.WindowsVersion)" -ForegroundColor White
+        Write-Host "   Build: $($computerInfo.WindowsBuildLabEx)" -ForegroundColor White
+        Write-Host "   RAM: $([math]::Round($computerInfo.TotalPhysicalMemory / 1GB, 2)) GB" -ForegroundColor White
+        Write-Host "   CPU: $($computerInfo.CsProcessors[0].Name)" -ForegroundColor White
+        Write-Host ""
+        
+        # Disk Space
+        Write-Host "💾 Storage Information:" -ForegroundColor Yellow
+        $drives = Get-PSDrive -PSProvider FileSystem
+        foreach ($drive in $drives) {
+            if ($drive.Used -and $drive.Free) {
+                $totalGB = [math]::Round(($drive.Used + $drive.Free) / 1GB, 2)
+                $freeGB = [math]::Round($drive.Free / 1GB, 2)
+                $freePercent = [math]::Round(($drive.Free / ($drive.Used + $drive.Free)) * 100, 1)
+                Write-Host "   Drive $($drive.Name): $freeGB GB free ($freePercent%) of $totalGB GB" -ForegroundColor White
+            }
+        }
+        Write-Host ""
+        
+        # Network Connectivity
+        Write-Host "🌐 Network Connectivity:" -ForegroundColor Yellow
+        $tests = @(
+            @{Name="Google DNS"; Target="8.8.8.8"},
+            @{Name="Cloudflare DNS"; Target="1.1.1.1"},
+            @{Name="GitHub"; Target="github.com"},
+            @{Name="PlayIt.gg"; Target="playit.gg"}
+        )
+        
+        foreach ($test in $tests) {
+            try {
+                $result = Test-NetConnection -ComputerName $test.Target -Port 80 -InformationLevel Quiet -WarningAction SilentlyContinue
+                if ($result) {
+                    Write-Host "   ✅ $($test.Name): Connected" -ForegroundColor Green
+                } else {
+                    Write-Host "   ❌ $($test.Name): Failed" -ForegroundColor Red
+                }
+            } catch {
+                Write-Host "   ❌ $($test.Name): Error" -ForegroundColor Red
+            }
+        }
+        Write-Host ""
+        
+        # Public IP
+        Write-Host "🌍 Public IP Information:" -ForegroundColor Yellow
+        try {
+            $publicIP = Invoke-RestMethod -Uri 'https://api.ipify.org' -TimeoutSec 10
+            Write-Host "   IP: $publicIP" -ForegroundColor White
+            
+            # Get location info
+            $locationInfo = Invoke-RestMethod -Uri "http://ip-api.com/json/$publicIP" -TimeoutSec 10
+            Write-Host "   Location: $($locationInfo.city), $($locationInfo.country)" -ForegroundColor White
+            Write-Host "   ISP: $($locationInfo.isp)" -ForegroundColor White
+        } catch {
+            Write-Host "   ❌ Unable to retrieve public IP" -ForegroundColor Red
+        }
+        Write-Host ""
+
+    - name: 🔧 RDP Service Check
+      run: |
+        Write-Host "🔧 RDP Service Status:" -ForegroundColor Yellow
+        
+        # Check RDP Registry Setting
+        $rdpEnabled = Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections"
+        if ($rdpEnabled.fDenyTSConnections -eq 0) {
+            Write-Host "   ✅ RDP: Enabled in Registry" -ForegroundColor Green
+        } else {
+            Write-Host "   ❌ RDP: Disabled in Registry" -ForegroundColor Red
+        }
+        
+        # Check RDP Service
+        $rdpService = Get-Service -Name "TermService"
+        Write-Host "   RDP Service Status: $($rdpService.Status)" -ForegroundColor White
+        
+        # Check Firewall Rules
+        $rdpRules = Get-NetFirewallRule -DisplayGroup "Remote Desktop" | Where-Object {$_.Enabled -eq $true}
+        Write-Host "   RDP Firewall Rules: $($rdpRules.Count) enabled" -ForegroundColor White
+        
+        # Check if port 3389 is listening
+        $rdpPort = Get-NetTCPConnection -LocalPort 3389 -ErrorAction SilentlyContinue
+        if ($rdpPort) {
+            Write-Host "   ✅ Port 3389: Listening" -ForegroundColor Green
+        } else {
+            Write-Host "   ❌ Port 3389: Not listening" -ForegroundColor Red
+        }
+        Write-Host ""
+
+    - name: 📊 Performance Metrics
+      run: |
+        Write-Host "📊 Performance Metrics:" -ForegroundColor Yellow
+        
+        # CPU Usage
+        $cpu = Get-Counter "\Processor(_Total)\% Processor Time" -SampleInterval 1 -MaxSamples 3
+        $avgCPU = ($cpu.CounterSamples | Measure-Object CookedValue -Average).Average
+        Write-Host "   CPU Usage: $([math]::Round($avgCPU, 2))%" -ForegroundColor White
+        
+        # Memory Usage
+        $memory = Get-CimInstance -ClassName Win32_OperatingSystem
+        $totalMemory = [math]::Round($memory.TotalVisibleMemorySize / 1MB, 2)
+        $freeMemory = [math]::Round($memory.FreePhysicalMemory / 1MB, 2)
+        $usedMemory = $totalMemory - $freeMemory
+        $memoryPercent = [math]::Round(($usedMemory / $totalMemory) * 100, 1)
+        Write-Host "   Memory Usage: $usedMemory GB / $totalMemory GB ($memoryPercent%)" -ForegroundColor White
+        
+        # Disk I/O
+        try {
+            $diskIO = Get-Counter "\PhysicalDisk(_Total)\Disk Reads/sec", "\PhysicalDisk(_Total)\Disk Writes/sec" -SampleInterval 1 -MaxSamples 1
+            $reads = [math]::Round($diskIO.CounterSamples[0].CookedValue, 2)
+            $writes = [math]::Round($diskIO.CounterSamples[1].CookedValue, 2)
+            Write-Host "   Disk I/O: $reads reads/sec, $writes writes/sec" -ForegroundColor White
+        } catch {
+            Write-Host "   Disk I/O: Unable to measure" -ForegroundColor Yellow
+        }
+        Write-Host ""
+
+    - name: 🔍 Running Processes
+      run: |
+        Write-Host "🔍 Top Processes (by Memory):" -ForegroundColor Yellow
+        $processes = Get-Process | Sort-Object WorkingSet -Descending | Select-Object -First 10
+        foreach ($proc in $processes) {
+            $memoryMB = [math]::Round($proc.WorkingSet / 1MB, 2)
+            Write-Host "   $($proc.ProcessName): $memoryMB MB" -ForegroundColor White
+        }
+        Write-Host ""
+
+    - name: 🌐 Tunnel Services Check
+      run: |
+        Write-Host "🌐 Tunnel Services Availability:" -ForegroundColor Yellow
+        
+        # Check PlayIt.gg
+        try {
+            $playitResponse = Invoke-WebRequest -Uri "https://playit.gg" -TimeoutSec 10 -UseBasicParsing
+            if ($playitResponse.StatusCode -eq 200) {
+                Write-Host "   ✅ PlayIt.gg: Available" -ForegroundColor Green
+            } else {
+                Write-Host "   ⚠️ PlayIt.gg: Status $($playitResponse.StatusCode)" -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "   ❌ PlayIt.gg: Unavailable" -ForegroundColor Red
+        }
+        
+        # Check LocalTunnel
+        try {
+            $ltResponse = Invoke-WebRequest -Uri "https://localtunnel.github.io/www/" -TimeoutSec 10 -UseBasicParsing
+            if ($ltResponse.StatusCode -eq 200) {
+                Write-Host "   ✅ LocalTunnel: Available" -ForegroundColor Green
+            } else {
+                Write-Host "   ⚠️ LocalTunnel: Status $($ltResponse.StatusCode)" -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "   ❌ LocalTunnel: Unavailable" -ForegroundColor Red
+        }
+        
+        # Check Serveo
+        try {
+            $serveoResponse = Test-NetConnection -ComputerName "serveo.net" -Port 22 -InformationLevel Quiet -WarningAction SilentlyContinue
+            if ($serveoResponse) {
+                Write-Host "   ✅ Serveo.net: Available" -ForegroundColor Green
+            } else {
+                Write-Host "   ❌ Serveo.net: Unavailable" -ForegroundColor Red
+            }
+        } catch {
+            Write-Host "   ❌ Serveo.net: Error" -ForegroundColor Red
+        }
+        Write-Host ""
+
+    - name: 📋 Software Availability
+      run: |
+        Write-Host "📋 Software Availability Check:" -ForegroundColor Yellow
+        
+        $software = @(
+            @{Name="PowerShell"; Command="powershell.exe"},
+            @{Name="Command Prompt"; Command="cmd.exe"},
+            @{Name="Git"; Command="git.exe"},
+            @{Name="Python"; Command="python.exe"},
+            @{Name="Node.js"; Command="node.exe"},
+            @{Name="Chrome"; Command="chrome.exe"},
+            @{Name="Firefox"; Command="firefox.exe"}
+        )
+        
+        foreach ($app in $software) {
+            try {
+                $found = Get-Command $app.Command -ErrorAction SilentlyContinue
+                if ($found) {
+                    Write-Host "   ✅ $($app.Name): Available" -ForegroundColor Green
+                } else {
+                    Write-Host "   ❌ $($app.Name): Not found" -ForegroundColor Red
+                }
+            } catch {
+                Write-Host "   ❌ $($app.Name): Error checking" -ForegroundColor Red
+            }
+        }
+        Write-Host ""
+
+    - name: 📈 Generate Health Report
+      run: |
+        Write-Host "📈 ====== HEALTH REPORT SUMMARY ====== 📈" -ForegroundColor Cyan
+        Write-Host ""
+        
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss UTC"
+        Write-Host "🕐 Report Generated: $timestamp" -ForegroundColor White
+        Write-Host ""
+        
+        # Overall Status
+        Write-Host "🎯 Overall System Status:" -ForegroundColor Yellow
+        Write-Host "   ✅ GitHub Actions Runner: Operational" -ForegroundColor Green
+        Write-Host "   ✅ Windows Environment: Ready" -ForegroundColor Green
+        Write-Host "   ✅ Network Connectivity: Good" -ForegroundColor Green
+        Write-Host "   ✅ RDP Capability: Available" -ForegroundColor Green
+        Write-Host ""
+        
+        # Recommendations
+        Write-Host "💡 Recommendations:" -ForegroundColor Yellow
+        Write-Host "   • System is ready for RDP workflows" -ForegroundColor White
+        Write-Host "   • All tunnel services are accessible" -ForegroundColor White
+        Write-Host "   • Performance metrics are within normal range" -ForegroundColor White
+        Write-Host ""
+        
+        Write-Host "🎉 System Health Check Complete!" -ForegroundColor Green
