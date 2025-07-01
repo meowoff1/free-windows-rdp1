@@ -1,0 +1,203 @@
+name: 🖥️ Direct Windows Access - Working Solution
+
+on: 
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Enable RDP with Public Access
+      run: |
+        Write-Host "🚀 Setting up direct RDP access..."
+        
+        # Enable RDP
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
+        
+        # Set password
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "DirectAccess2024!" -Force)
+        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "runneradmin" -ErrorAction SilentlyContinue
+        
+        Write-Host "✅ RDP configured for direct access!"
+
+    - name: 🌐 Get Public IP and Setup Access
+      run: |
+        Write-Host "🌐 Getting public IP address..."
+        
+        # Get public IP
+        try {
+            $publicIP = Invoke-RestMethod -Uri 'https://api.ipify.org' -TimeoutSec 10
+            Write-Host "🔗 Public IP: $publicIP"
+            
+            # Try to get more network info
+            $networkInfo = Invoke-RestMethod -Uri "http://ip-api.com/json/$publicIP" -TimeoutSec 10
+            Write-Host "🌍 Location: $($networkInfo.city), $($networkInfo.country)"
+            Write-Host "🏢 ISP: $($networkInfo.isp)"
+            
+        } catch {
+            Write-Host "❌ Could not get public IP"
+        }
+
+    - name: 📦 Install and Setup Bore (ngrok alternative)
+      run: |
+        Write-Host "📦 Installing Bore tunnel..."
+        
+        try {
+            # Download bore (free ngrok alternative)
+            $boreUrl = "https://github.com/ekzhang/bore/releases/latest/download/bore-v0.5.0-x86_64-pc-windows-msvc.exe"
+            Invoke-WebRequest -Uri $boreUrl -OutFile "bore.exe" -UseBasicParsing -TimeoutSec 60
+            Write-Host "✅ Bore downloaded!"
+            
+            # Start bore tunnel for RDP
+            Write-Host "🚀 Starting Bore tunnel for RDP..."
+            Start-Process -FilePath ".\bore.exe" -ArgumentList "local", "3389", "--to", "bore.pub" -WindowStyle Hidden
+            
+            Start-Sleep -Seconds 15
+            Write-Host "✅ Bore tunnel started!"
+            Write-Host "🔗 Connect to: bore.pub:[random-port]"
+            Write-Host "📋 Check bore.pub website for your port number"
+            
+        } catch {
+            Write-Host "❌ Bore failed, trying alternative..."
+            
+            # Alternative: Try rathole
+            try {
+                Write-Host "📦 Trying rathole tunnel..."
+                $ratholeUrl = "https://github.com/rapiz1/rathole/releases/latest/download/rathole-x86_64-pc-windows-msvc.exe"
+                Invoke-WebRequest -Uri $ratholeUrl -OutFile "rathole.exe" -UseBasicParsing -TimeoutSec 60
+                Write-Host "✅ Rathole downloaded as backup!"
+            } catch {
+                Write-Host "❌ All tunnel methods failed"
+            }
+        }
+
+    - name: 🔧 Setup TeamViewer (Most Reliable)
+      run: |
+        Write-Host "🔧 Installing TeamViewer as backup..."
+        
+        try {
+            # Download TeamViewer
+            $tvUrl = "https://download.teamviewer.com/download/TeamViewer_Setup.exe"
+            Invoke-WebRequest -Uri $tvUrl -OutFile "TeamViewer.exe" -UseBasicParsing -TimeoutSec 120
+            
+            # Install TeamViewer
+            Write-Host "🔧 Installing TeamViewer..."
+            Start-Process -FilePath "TeamViewer.exe" -ArgumentList "/S" -Wait -ErrorAction SilentlyContinue
+            
+            # Start TeamViewer
+            Write-Host "🚀 Starting TeamViewer..."
+            Start-Process -FilePath "C:\Program Files\TeamViewer\TeamViewer.exe" -ErrorAction SilentlyContinue
+            
+            Write-Host "✅ TeamViewer installed and started!"
+            Write-Host "📋 TeamViewer will show ID and Password on desktop"
+            
+        } catch {
+            Write-Host "❌ TeamViewer installation failed"
+        }
+
+    - name: 🔧 Setup Chrome Remote Desktop
+      run: |
+        Write-Host "🔧 Setting up Chrome Remote Desktop..."
+        
+        try {
+            # Install Chrome first
+            $chromeUrl = "https://dl.google.com/chrome/install/latest/chrome_installer.exe"
+            Invoke-WebRequest -Uri $chromeUrl -OutFile "chrome.exe" -UseBasicParsing -TimeoutSec 60
+            Start-Process -FilePath "chrome.exe" -ArgumentList "/silent", "/install" -Wait
+            
+            Write-Host "✅ Chrome installed!"
+            Write-Host "📋 Go to remotedesktop.google.com to set up access"
+            
+        } catch {
+            Write-Host "❌ Chrome installation failed"
+        }
+
+    - name: 🔍 Network Diagnostics
+      run: |
+        Write-Host "🔍 Running network diagnostics..."
+        
+        # Check if RDP port is accessible
+        Write-Host "🔍 Checking RDP port accessibility..."
+        $rdpTest = Test-NetConnection -ComputerName "localhost" -Port 3389
+        if ($rdpTest.TcpTestSucceeded) {
+            Write-Host "✅ RDP port 3389 is accessible locally"
+        } else {
+            Write-Host "❌ RDP port 3389 is not accessible"
+        }
+        
+        # Check firewall rules
+        Write-Host "🔍 Checking firewall rules..."
+        $firewallRules = Get-NetFirewallRule -DisplayGroup "Remote Desktop" | Where-Object {$_.Enabled -eq $true}
+        Write-Host "✅ Active RDP firewall rules: $($firewallRules.Count)"
+        
+        # Check listening ports
+        Write-Host "🔍 Checking listening ports..."
+        $listeningPorts = Get-NetTCPConnection -State Listen | Select-Object LocalAddress, LocalPort
+        $rdpListening = $listeningPorts | Where-Object {$_.LocalPort -eq 3389}
+        if ($rdpListening) {
+            Write-Host "✅ RDP is listening on port 3389"
+        } else {
+            Write-Host "❌ RDP is not listening on port 3389"
+        }
+
+    - name: 🔑 Connection Methods
+      run: |
+        Write-Host "=================================="
+        Write-Host "🖥️  MULTIPLE ACCESS METHODS"
+        Write-Host "=================================="
+        Write-Host ""
+        Write-Host "🥇 Method 1 - TeamViewer (MOST RELIABLE):"
+        Write-Host "   1. Use RDP to connect first (see Method 2)"
+        Write-Host "   2. Open TeamViewer on the desktop"
+        Write-Host "   3. Note the ID and Password"
+        Write-Host "   4. Use TeamViewer on your device"
+        Write-Host ""
+        Write-Host "🥈 Method 2 - Direct RDP (if available):"
+        Write-Host "   Server: Check public IP above"
+        Write-Host "   Username: runneradmin"
+        Write-Host "   Password: DirectAccess2024!"
+        Write-Host "   Note: May not work due to firewall"
+        Write-Host ""
+        Write-Host "🥉 Method 3 - Chrome Remote Desktop:"
+        Write-Host "   1. Use RDP to connect first"
+        Write-Host "   2. Open Chrome and go to remotedesktop.google.com"
+        Write-Host "   3. Set up remote access"
+        Write-Host "   4. Use your Google account to connect"
+        Write-Host ""
+        Write-Host "🔧 Method 4 - Bore Tunnel:"
+        Write-Host "   Check bore.pub website for your port"
+        Write-Host "   Connect to: bore.pub:[your-port]"
+        Write-Host "   Username: runneradmin"
+        Write-Host "   Password: DirectAccess2024!"
+        Write-Host ""
+        Write-Host "=================================="
+        Write-Host "📋 Recommended Steps:"
+        Write-Host "1. Try TeamViewer first (most reliable)"
+        Write-Host "2. If that fails, try bore.pub tunnel"
+        Write-Host "3. If all fails, set up Chrome Remote Desktop"
+        Write-Host "=================================="
+
+    - name: 🔄 Keep Session Active
+      run: |
+        Write-Host "🟢 Multiple Access Methods Active!"
+        Write-Host "⏰ Started at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        Write-Host "🎯 TeamViewer is the most reliable method!"
+        
+        $endTime = (Get-Date).AddHours(6)
+        while ((Get-Date) -lt $endTime) {
+            $remaining = $endTime - (Get-Date)
+            $hours = [math]::Floor($remaining.TotalHours)
+            $minutes = $remaining.Minutes
+            
+            Write-Host "🟢 Session Active - Time Remaining: $hours hours $minutes minutes"
+            Write-Host "📋 TeamViewer should be running on desktop"
+            
+            Start-Sleep -Seconds 300
+        }
