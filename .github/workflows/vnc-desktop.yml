@@ -48,25 +48,79 @@ jobs:
         Start-Service "tvnserver"
         Write-Host "✅ TightVNC Server started on port 5900!"
 
-    - name: 🌐 Start VNC Tunnel
+    - name: 📦 Download PlayIt.gg
+      run: |
+        Write-Host "📥 Downloading PlayIt.gg for TCP tunneling..."
+        
+        # Try multiple PlayIt.gg sources
+        $urls = @(
+            "https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-windows-amd64.exe",
+            "https://playit.gg/downloads/playit-win_64.exe"
+        )
+        
+        $downloaded = $false
+        foreach ($url in $urls) {
+            try {
+                Write-Host "Trying: $url"
+                Invoke-WebRequest -Uri $url -OutFile "playit.exe" -UseBasicParsing -TimeoutSec 60
+                Write-Host "✅ PlayIt.gg downloaded from: $url"
+                $downloaded = $true
+                break
+            } catch {
+                Write-Host "❌ Failed: $url"
+            }
+        }
+        
+        if (-not $downloaded) {
+            Write-Host "⚠️ PlayIt download failed, will use SSH tunnel as backup"
+        }
+
+    - name: 🌐 Start VNC Tunnel with PlayIt
       run: |
         Write-Host "🌐 Starting VNC tunnel for TigerVNC..."
         
-        # Generate random subdomain
-        $randomId = Get-Random -Minimum 1000 -Maximum 9999
-        $subdomain = "tigervnc-$randomId"
-        
-        Write-Host "🔗 Tunnel subdomain: $subdomain"
-        
-        # Start LocalTunnel for VNC port 5900
-        Start-Process -FilePath "cmd" -ArgumentList "/c", "lt --port 5900 --subdomain $subdomain" -WindowStyle Hidden
-        
-        Write-Host "⏳ Waiting for VNC tunnel to establish..."
-        Start-Sleep -Seconds 15
-        
-        $tunnelUrl = "https://$subdomain.loca.lt"
-        Write-Host "🔗 VNC Tunnel URL: $tunnelUrl"
-        Write-Host "📋 For TigerVNC: $subdomain.loca.lt:5900"
+        if (Test-Path "playit.exe") {
+            Write-Host "🚀 Starting PlayIt tunnel for VNC port 5900..."
+            
+            # Start PlayIt for VNC port 5900
+            $playitProcess = Start-Process -FilePath ".\playit.exe" -ArgumentList "tcp", "5900" -PassThru -WindowStyle Hidden
+            
+            Write-Host "⏳ Waiting for PlayIt tunnel to establish..."
+            Start-Sleep -Seconds 25
+            
+            Write-Host "🔗 PlayIt tunnel started for VNC port 5900!"
+            Write-Host "📋 Check PlayIt.gg logs above for connection details"
+            Write-Host "🐅 Use the PlayIt URL with TigerVNC Viewer"
+            
+        } else {
+            Write-Host "⚠️ PlayIt not available, using SSH tunnel backup..."
+            
+            # Backup: SSH tunnel via serveo.net
+            $randomPort = Get-Random -Minimum 15900 -Maximum 16900
+            $subdomain = "tigervnc-$(Get-Random -Min 1000 -Max 9999)"
+            
+            Write-Host "🔧 Setting up SSH tunnel..."
+            Write-Host "🔗 Tunnel: $subdomain.serveo.net:$randomPort"
+            
+            try {
+                # SSH tunnel for VNC
+                Start-Process -FilePath "ssh" -ArgumentList "-o", "StrictHostKeyChecking=no", "-R", "$subdomain`:5900:localhost:5900", "serveo.net" -WindowStyle Hidden
+                
+                Write-Host "✅ SSH Tunnel established!"
+                Write-Host "🔗 VNC Server: $subdomain.serveo.net:5900"
+                Write-Host "📋 For TigerVNC: $subdomain.serveo.net:5900"
+                
+            } catch {
+                Write-Host "❌ SSH tunnel failed"
+                Write-Host "🔄 Use RDP instead: Check LocalTunnel output below"
+                
+                # Fallback to RDP tunnel
+                $rdpSubdomain = "rdp-backup-$(Get-Random -Min 1000 -Max 9999)"
+                Start-Process -FilePath "cmd" -ArgumentList "/c", "lt --port 3389 --subdomain $rdpSubdomain" -WindowStyle Hidden
+                Start-Sleep -Seconds 10
+                Write-Host "🔄 RDP Backup: https://$rdpSubdomain.loca.lt"
+            }
+        }
 
     - name: 📊 System Information
       run: |
@@ -84,27 +138,37 @@ jobs:
         Write-Host "=================================="
         Write-Host "🐅  TIGERVNC CONNECTION DETAILS"
         Write-Host "=================================="
-        Write-Host "🌐 VNC Server: Check tunnel output above"
-        Write-Host "🔌 Port: 5900"
         Write-Host "🔑 VNC Password: tigervnc"
         Write-Host "=================================="
-        Write-Host "📝 TigerVNC Instructions:"
-        Write-Host "1. Open TigerVNC Viewer"
-        Write-Host "2. Enter: [tunnel-subdomain].loca.lt:5900"
-        Write-Host "3. Password: tigervnc"
-        Write-Host "4. Enjoy Windows Desktop!"
-        Write-Host "=================================="
-        Write-Host "🔄 Alternative RDP:"
-        Write-Host "   Server: [tunnel-subdomain].loca.lt:3389"
+        Write-Host "📝 Connection Methods:"
+        Write-Host ""
+        Write-Host "🥇 Method 1 - PlayIt.gg (Best):"
+        Write-Host "   Check PlayIt logs above for tunnel URL"
+        Write-Host "   Use that URL in TigerVNC Viewer"
+        Write-Host "   Password: tigervnc"
+        Write-Host ""
+        Write-Host "🥈 Method 2 - SSH Tunnel:"
+        Write-Host "   Check SSH tunnel output above"
+        Write-Host "   Format: [subdomain].serveo.net:5900"
+        Write-Host "   Password: tigervnc"
+        Write-Host ""
+        Write-Host "🥉 Method 3 - RDP Backup:"
+        Write-Host "   Check RDP backup URL above"
         Write-Host "   Username: runneradmin"
         Write-Host "   Password: TigerVNC123!"
+        Write-Host "=================================="
+        Write-Host "🐅 TigerVNC Instructions:"
+        Write-Host "1. Open TigerVNC Viewer"
+        Write-Host "2. Enter the URL from Method 1 or 2"
+        Write-Host "3. Password: tigervnc"
+        Write-Host "4. Enjoy Windows Desktop!"
         Write-Host "=================================="
 
     - name: 🔄 Keep Session Active
       run: |
         Write-Host "🟢 TigerVNC Session Active!"
         Write-Host "⏰ Started at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-        Write-Host "🐅 Connect with TigerVNC Viewer!"
+        Write-Host "🐅 Multiple connection methods available!"
         Write-Host ""
         
         $startTime = Get-Date
@@ -117,6 +181,7 @@ jobs:
             
             Write-Host "🟢 VNC Session Active - Time Remaining: $hours hours $minutes minutes"
             Write-Host "🐅 TigerVNC ready for connection!"
+            Write-Host "📋 Try PlayIt.gg first, then SSH tunnel, then RDP backup"
             
             Start-Sleep -Seconds 300
         }
