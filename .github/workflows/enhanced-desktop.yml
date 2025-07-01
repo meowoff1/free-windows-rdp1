@@ -1,0 +1,188 @@
+name: 🖥️ Enhanced Windows Desktop - Multiple Methods
+
+on: 
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        
+    - name: 📦 Install Tools
+      run: |
+        Write-Host "📦 Installing tools..."
+        npm install -g localtunnel
+        Write-Host "✅ LocalTunnel installed!"
+      
+    - name: 🔧 Enable RDP
+      run: |
+        Write-Host "🚀 Setting up Windows RDP..."
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "Enhanced123!" -Force)
+        Write-Host "✅ RDP enabled!"
+
+    - name: 🖥️ Setup VNC Server
+      run: |
+        Write-Host "🖥️ Setting up VNC Server..."
+        
+        try {
+            # Download TightVNC
+            $vncUrl = "https://www.tightvnc.com/download/2.8.81/tightvnc-2.8.81-gpl-setup-64bit.msi"
+            Invoke-WebRequest -Uri $vncUrl -OutFile "tightvnc.msi" -UseBasicParsing -TimeoutSec 120
+            
+            # Install TightVNC
+            Start-Process msiexec.exe -Wait -ArgumentList '/i', 'tightvnc.msi', '/quiet', '/norestart', 'ADDLOCAL="Server"', 'SERVER_REGISTER_AS_SERVICE=1', 'SERVER_ADD_FIREWALL_EXCEPTION=1', 'SET_USEVNCAUTHENTICATION=1', 'VALUE_OF_USEVNCAUTHENTICATION=1', 'SET_PASSWORD=1', 'VALUE_OF_PASSWORD=tigervnc'
+            
+            # Start VNC service
+            Start-Service "tvnserver" -ErrorAction SilentlyContinue
+            Write-Host "✅ TightVNC installed and started!"
+            
+            # Verify VNC is running
+            $vncProcess = Get-Process -Name "tvnserver" -ErrorAction SilentlyContinue
+            if ($vncProcess) {
+                Write-Host "✅ VNC Server is running (PID: $($vncProcess.Id))"
+            } else {
+                Write-Host "⚠️ VNC Server not detected"
+            }
+            
+        } catch {
+            Write-Host "❌ VNC setup failed: $($_.Exception.Message)"
+        }
+
+    - name: 🌐 Setup Multiple Tunnels
+      run: |
+        Write-Host "🌐 Setting up multiple tunnel methods..."
+        
+        # Method 1: LocalTunnel for RDP
+        $rdpId = Get-Random -Min 1000 -Max 9999
+        $rdpSubdomain = "enhanced-rdp-$rdpId"
+        Write-Host "🔗 Starting RDP tunnel: $rdpSubdomain"
+        Start-Process -FilePath "cmd" -ArgumentList "/c", "lt --port 3389 --subdomain $rdpSubdomain" -WindowStyle Hidden
+        
+        Start-Sleep -Seconds 10
+        Write-Host "✅ RDP Tunnel: https://$rdpSubdomain.loca.lt"
+        Write-Host "📋 RDP Connection: $rdpSubdomain.loca.lt"
+        
+        # Method 2: SSH Tunnel for VNC
+        $vncId = Get-Random -Min 1000 -Max 9999
+        $vncSubdomain = "enhanced-vnc-$vncId"
+        Write-Host "🔗 Starting VNC SSH tunnel: $vncSubdomain"
+        
+        try {
+            Start-Process -FilePath "ssh" -ArgumentList "-o", "StrictHostKeyChecking=no", "-R", "$vncSubdomain`:5900:localhost:5900", "serveo.net" -WindowStyle Hidden
+            Write-Host "✅ VNC SSH Tunnel: $vncSubdomain.serveo.net:5900"
+        } catch {
+            Write-Host "❌ SSH tunnel failed"
+        }
+        
+        # Method 3: Alternative SSH for RDP
+        $rdpSshId = Get-Random -Min 1000 -Max 9999
+        $rdpSshSubdomain = "enhanced-rdp-ssh-$rdpSshId"
+        Write-Host "🔗 Starting RDP SSH tunnel: $rdpSshSubdomain"
+        
+        try {
+            Start-Process -FilePath "ssh" -ArgumentList "-o", "StrictHostKeyChecking=no", "-R", "$rdpSshSubdomain`:3389:localhost:3389", "serveo.net" -WindowStyle Hidden
+            Write-Host "✅ RDP SSH Tunnel: $rdpSshSubdomain.serveo.net:3389"
+        } catch {
+            Write-Host "❌ RDP SSH tunnel failed"
+        }
+
+    - name: 🔍 System Diagnostics
+      run: |
+        Write-Host "🔍 Running system diagnostics..."
+        
+        # Memory info
+        $memory = Get-CimInstance -ClassName Win32_ComputerSystem
+        $totalRAM = [math]::Round($memory.TotalPhysicalMemory / 1GB, 2)
+        Write-Host "🧠 Total RAM: $totalRAM GB"
+        
+        # Available memory
+        $availableMemory = Get-CimInstance -ClassName Win32_OperatingSystem
+        $freeRAM = [math]::Round($availableMemory.FreePhysicalMemory / 1MB, 2)
+        Write-Host "🧠 Free RAM: $freeRAM GB"
+        
+        # Check services
+        Write-Host "🔍 Checking services..."
+        $rdpService = Get-Service -Name "TermService" -ErrorAction SilentlyContinue
+        if ($rdpService) {
+            Write-Host "✅ RDP Service: $($rdpService.Status)"
+        }
+        
+        $vncService = Get-Service -Name "tvnserver" -ErrorAction SilentlyContinue
+        if ($vncService) {
+            Write-Host "✅ VNC Service: $($vncService.Status)"
+        }
+        
+        # Check listening ports
+        Write-Host "🔍 Checking listening ports..."
+        $rdpPort = Get-NetTCPConnection -LocalPort 3389 -State Listen -ErrorAction SilentlyContinue
+        if ($rdpPort) {
+            Write-Host "✅ RDP Port 3389: Listening"
+        } else {
+            Write-Host "❌ RDP Port 3389: Not listening"
+        }
+        
+        $vncPort = Get-NetTCPConnection -LocalPort 5900 -State Listen -ErrorAction SilentlyContinue
+        if ($vncPort) {
+            Write-Host "✅ VNC Port 5900: Listening"
+        } else {
+            Write-Host "❌ VNC Port 5900: Not listening"
+        }
+
+    - name: 🔑 Connection Details
+      run: |
+        Write-Host "=================================="
+        Write-Host "🖥️  ENHANCED CONNECTION DETAILS"
+        Write-Host "=================================="
+        Write-Host ""
+        Write-Host "🥇 Method 1 - RDP via LocalTunnel (RECOMMENDED):"
+        Write-Host "   Server: Check 'RDP Connection' in logs above"
+        Write-Host "   Username: runneradmin"
+        Write-Host "   Password: Enhanced123!"
+        Write-Host "   Use: Remote Desktop Connection"
+        Write-Host ""
+        Write-Host "🥈 Method 2 - VNC via SSH:"
+        Write-Host "   Server: Check 'VNC SSH Tunnel' in logs above"
+        Write-Host "   Password: tigervnc"
+        Write-Host "   Use: TigerVNC Viewer"
+        Write-Host ""
+        Write-Host "🥉 Method 3 - RDP via SSH:"
+        Write-Host "   Server: Check 'RDP SSH Tunnel' in logs above"
+        Write-Host "   Username: runneradmin"
+        Write-Host "   Password: Enhanced123!"
+        Write-Host "   Use: Remote Desktop Connection"
+        Write-Host ""
+        Write-Host "=================================="
+        Write-Host "📋 Troubleshooting:"
+        Write-Host "- Try Method 1 first (most reliable)"
+        Write-Host "- If connection fails, wait 1 minute and retry"
+        Write-Host "- Check the exact URLs in the logs above"
+        Write-Host "=================================="
+
+    - name: 🔄 Keep Session Active
+      run: |
+        Write-Host "🟢 Enhanced Desktop Session Active!"
+        Write-Host "⏰ Started at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        Write-Host "🎯 Multiple connection methods available!"
+        
+        $endTime = (Get-Date).AddHours(6)
+        while ((Get-Date) -lt $endTime) {
+            $remaining = $endTime - (Get-Date)
+            $hours = [math]::Floor($remaining.TotalHours)
+            $minutes = $remaining.Minutes
+            
+            Write-Host "🟢 Session Active - Time Remaining: $hours hours $minutes minutes"
+            Write-Host "📋 Try RDP first, then VNC if needed"
+            
+            Start-Sleep -Seconds 300
+        }
