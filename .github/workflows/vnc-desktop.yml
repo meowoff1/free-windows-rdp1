@@ -1,0 +1,124 @@
+name: 🖥️ Free Windows Desktop - VNC TigerVNC
+
+on: 
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        
+    - name: 📦 Install LocalTunnel
+      run: |
+        Write-Host "📦 Installing LocalTunnel..."
+        npm install -g localtunnel
+        Write-Host "✅ LocalTunnel installed!"
+      
+    - name: 🔧 Enable RDP (Backup)
+      run: |
+        Write-Host "🚀 Setting up Windows..."
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "TigerVNC123!" -Force)
+        Write-Host "✅ Windows ready!"
+
+    - name: 🖥️ Setup TightVNC Server
+      run: |
+        Write-Host "🖥️ Setting up VNC Server for TigerVNC..."
+        
+        # Download TightVNC
+        $vncUrl = "https://www.tightvnc.com/download/2.8.81/tightvnc-2.8.81-gpl-setup-64bit.msi"
+        Write-Host "📥 Downloading TightVNC..."
+        Invoke-WebRequest -Uri $vncUrl -OutFile "tightvnc.msi" -UseBasicParsing -TimeoutSec 120
+        
+        # Install TightVNC
+        Write-Host "🔧 Installing TightVNC..."
+        Start-Process msiexec.exe -Wait -ArgumentList '/i', 'tightvnc.msi', '/quiet', '/norestart', 'ADDLOCAL="Server"', 'SERVER_REGISTER_AS_SERVICE=1', 'SERVER_ADD_FIREWALL_EXCEPTION=1', 'SET_USEVNCAUTHENTICATION=1', 'VALUE_OF_USEVNCAUTHENTICATION=1', 'SET_PASSWORD=1', 'VALUE_OF_PASSWORD=tigervnc'
+        
+        # Start VNC service
+        Start-Service "tvnserver"
+        Write-Host "✅ TightVNC Server started on port 5900!"
+
+    - name: 🌐 Start VNC Tunnel
+      run: |
+        Write-Host "🌐 Starting VNC tunnel for TigerVNC..."
+        
+        # Generate random subdomain
+        $randomId = Get-Random -Minimum 1000 -Maximum 9999
+        $subdomain = "tigervnc-$randomId"
+        
+        Write-Host "🔗 Tunnel subdomain: $subdomain"
+        
+        # Start LocalTunnel for VNC port 5900
+        Start-Process -FilePath "cmd" -ArgumentList "/c", "lt --port 5900 --subdomain $subdomain" -WindowStyle Hidden
+        
+        Write-Host "⏳ Waiting for VNC tunnel to establish..."
+        Start-Sleep -Seconds 15
+        
+        $tunnelUrl = "https://$subdomain.loca.lt"
+        Write-Host "🔗 VNC Tunnel URL: $tunnelUrl"
+        Write-Host "📋 For TigerVNC: $subdomain.loca.lt:5900"
+
+    - name: 📊 System Information
+      run: |
+        Write-Host "=================================="
+        Write-Host "🖥️  SYSTEM INFORMATION"
+        Write-Host "=================================="
+        Write-Host "💻 OS: $(Get-ComputerInfo | Select-Object -ExpandProperty WindowsProductName)"
+        Write-Host "🧠 RAM: $([math]::Round((Get-ComputerInfo).TotalPhysicalMemory / 1GB, 2)) GB"
+        Write-Host "⚡ CPU: $(Get-ComputerInfo | Select-Object -ExpandProperty CsProcessors | Select-Object -First 1 -ExpandProperty Name)"
+        Write-Host "💾 Disk: $([math]::Round((Get-PSDrive C | Select-Object -ExpandProperty Free) / 1GB, 2)) GB Free"
+        Write-Host "=================================="
+
+    - name: 🔑 TigerVNC Connection Details
+      run: |
+        Write-Host "=================================="
+        Write-Host "🐅  TIGERVNC CONNECTION DETAILS"
+        Write-Host "=================================="
+        Write-Host "🌐 VNC Server: Check tunnel output above"
+        Write-Host "🔌 Port: 5900"
+        Write-Host "🔑 VNC Password: tigervnc"
+        Write-Host "=================================="
+        Write-Host "📝 TigerVNC Instructions:"
+        Write-Host "1. Open TigerVNC Viewer"
+        Write-Host "2. Enter: [tunnel-subdomain].loca.lt:5900"
+        Write-Host "3. Password: tigervnc"
+        Write-Host "4. Enjoy Windows Desktop!"
+        Write-Host "=================================="
+        Write-Host "🔄 Alternative RDP:"
+        Write-Host "   Server: [tunnel-subdomain].loca.lt:3389"
+        Write-Host "   Username: runneradmin"
+        Write-Host "   Password: TigerVNC123!"
+        Write-Host "=================================="
+
+    - name: 🔄 Keep Session Active
+      run: |
+        Write-Host "🟢 TigerVNC Session Active!"
+        Write-Host "⏰ Started at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        Write-Host "🐅 Connect with TigerVNC Viewer!"
+        Write-Host ""
+        
+        $startTime = Get-Date
+        $endTime = $startTime.AddHours(6)
+        
+        while ((Get-Date) -lt $endTime) {
+            $remaining = $endTime - (Get-Date)
+            $hours = [math]::Floor($remaining.TotalHours)
+            $minutes = $remaining.Minutes
+            
+            Write-Host "🟢 VNC Session Active - Time Remaining: $hours hours $minutes minutes"
+            Write-Host "🐅 TigerVNC ready for connection!"
+            
+            Start-Sleep -Seconds 300
+        }
+        
+        Write-Host "⏰ Session ended. Run workflow again for new session!"
