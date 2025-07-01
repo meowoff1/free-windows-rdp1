@@ -1,0 +1,268 @@
+name: 🐧 Free Linux Desktop - RDP & VNC
+
+on: 
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    
+    steps:
+    - name: 📥 Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: 🔧 Setup Linux Desktop Environment
+      run: |
+        echo "🚀 Setting up Linux desktop environment..."
+        
+        # Update system
+        sudo apt update -qq
+        
+        # Install desktop environment (XFCE - lightweight)
+        echo "📦 Installing XFCE desktop..."
+        sudo apt install -y xfce4 xfce4-goodies --no-install-recommends
+        
+        # Install RDP server
+        echo "📦 Installing XRDP server..."
+        sudo apt install -y xrdp
+        
+        # Install VNC server
+        echo "📦 Installing VNC server..."
+        sudo apt install -y tightvncserver
+        
+        echo "✅ Desktop environment installed!"
+
+    - name: 👤 Setup User Account
+      run: |
+        echo "👤 Setting up user account..."
+        
+        # Create user with password
+        sudo useradd -m -s /bin/bash rdpuser
+        echo 'rdpuser:LinuxRDP123!' | sudo chpasswd
+        
+        # Add user to sudo group
+        sudo usermod -aG sudo rdpuser
+        
+        # Add user to required groups
+        sudo usermod -aG audio,video,dialout rdpuser
+        
+        echo "✅ User 'rdpuser' created with password 'LinuxRDP123!'"
+
+    - name: 🖥️ Configure RDP Server
+      run: |
+        echo "🖥️ Configuring RDP server..."
+        
+        # Configure XRDP
+        sudo systemctl enable xrdp
+        sudo systemctl start xrdp
+        
+        # Configure firewall
+        sudo ufw allow 3389/tcp
+        sudo ufw allow 5900/tcp
+        
+        # Set XFCE as default session
+        echo "xfce4-session" | sudo tee /home/rdpuser/.xsession
+        sudo chown rdpuser:rdpuser /home/rdpuser/.xsession
+        
+        # Configure XRDP for XFCE
+        sudo sed -i 's/^new_cursors=true/new_cursors=false/g' /etc/xrdp/xrdp.ini
+        
+        echo "✅ RDP server configured!"
+
+    - name: 🖥️ Setup VNC Server
+      run: |
+        echo "🖥️ Setting up VNC server..."
+        
+        # Setup VNC for rdpuser
+        sudo -u rdpuser mkdir -p /home/rdpuser/.vnc
+        
+        # Set VNC password
+        echo "tigervnc" | sudo -u rdpuser vncpasswd -f > /home/rdpuser/.vnc/passwd
+        sudo chmod 600 /home/rdpuser/.vnc/passwd
+        sudo chown rdpuser:rdpuser /home/rdpuser/.vnc/passwd
+        
+        # Create VNC startup script
+        cat << 'EOF' | sudo tee /home/rdpuser/.vnc/xstartup
+#!/bin/bash
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+startxfce4 &
+EOF
+        
+        sudo chmod +x /home/rdpuser/.vnc/xstartup
+        sudo chown rdpuser:rdpuser /home/rdpuser/.vnc/xstartup
+        
+        # Start VNC server
+        sudo -u rdpuser DISPLAY=:1 vncserver :1 -geometry 1024x768 -depth 24
+        
+        echo "✅ VNC server started on display :1"
+
+    - name: 📦 Install Useful Software
+      run: |
+        echo "📦 Installing useful software..."
+        
+        # Install browsers and tools
+        sudo apt install -y firefox chromium-browser
+        sudo apt install -y gedit nano vim
+        sudo apt install -y file-manager thunar
+        sudo apt install -y git curl wget
+        sudo apt install -y python3 python3-pip
+        sudo apt install -y nodejs npm
+        
+        # Install development tools
+        sudo apt install -y code --no-install-recommends || echo "VS Code not available"
+        
+        echo "✅ Software installed!"
+
+    - name: 🟢 Setup Node.js and LocalTunnel
+      run: |
+        echo "🟢 Setting up tunneling tools..."
+        
+        # Install LocalTunnel
+        sudo npm install -g localtunnel
+        
+        echo "✅ LocalTunnel installed!"
+
+    - name: 🌐 Start Multiple Tunnels
+      run: |
+        echo "🌐 Starting multiple tunnel methods..."
+        
+        # Method 1: LocalTunnel for RDP
+        RDP_ID=$(shuf -i 1000-9999 -n 1)
+        RDP_SUBDOMAIN="linux-rdp-$RDP_ID"
+        echo "🔗 Starting RDP tunnel: $RDP_SUBDOMAIN"
+        lt --port 3389 --subdomain $RDP_SUBDOMAIN &
+        sleep 10
+        echo "✅ RDP Tunnel: https://$RDP_SUBDOMAIN.loca.lt"
+        echo "📋 RDP Connection: $RDP_SUBDOMAIN.loca.lt:3389"
+        
+        # Method 2: LocalTunnel for VNC
+        VNC_ID=$(shuf -i 1000-9999 -n 1)
+        VNC_SUBDOMAIN="linux-vnc-$VNC_ID"
+        echo "🔗 Starting VNC tunnel: $VNC_SUBDOMAIN"
+        lt --port 5901 --subdomain $VNC_SUBDOMAIN &
+        sleep 10
+        echo "✅ VNC Tunnel: https://$VNC_SUBDOMAIN.loca.lt"
+        echo "📋 VNC Connection: $VNC_SUBDOMAIN.loca.lt:5901"
+        
+        # Method 3: SSH Tunnel for RDP
+        SSH_RDP_ID=$(shuf -i 1000-9999 -n 1)
+        SSH_RDP_SUBDOMAIN="linux-ssh-rdp-$SSH_RDP_ID"
+        echo "🔗 Starting SSH RDP tunnel: $SSH_RDP_SUBDOMAIN"
+        ssh -o StrictHostKeyChecking=no -R $SSH_RDP_SUBDOMAIN:3389:localhost:3389 serveo.net &
+        sleep 5
+        echo "✅ SSH RDP Tunnel: $SSH_RDP_SUBDOMAIN.serveo.net:3389"
+        
+        # Method 4: SSH Tunnel for VNC
+        SSH_VNC_ID=$(shuf -i 1000-9999 -n 1)
+        SSH_VNC_SUBDOMAIN="linux-ssh-vnc-$SSH_VNC_ID"
+        echo "🔗 Starting SSH VNC tunnel: $SSH_VNC_SUBDOMAIN"
+        ssh -o StrictHostKeyChecking=no -R $SSH_VNC_SUBDOMAIN:5901:localhost:5901 serveo.net &
+        sleep 5
+        echo "✅ SSH VNC Tunnel: $SSH_VNC_SUBDOMAIN.serveo.net:5901"
+
+    - name: 🔍 System Information
+      run: |
+        echo "=================================="
+        echo "🐧  LINUX SYSTEM INFORMATION"
+        echo "=================================="
+        echo "💻 OS: $(lsb_release -d | cut -f2)"
+        echo "🧠 RAM: $(free -h | awk '/^Mem:/ {print $2}')"
+        echo "⚡ CPU: $(lscpu | grep 'Model name' | cut -d':' -f2 | xargs)"
+        echo "💾 Disk: $(df -h / | awk 'NR==2 {print $4}') available"
+        echo "🌐 IP: $(curl -s https://api.ipify.org)"
+        echo "=================================="
+
+    - name: 🔍 Service Status Check
+      run: |
+        echo "🔍 Checking service status..."
+        
+        # Check RDP service
+        if systemctl is-active --quiet xrdp; then
+            echo "✅ XRDP service: Running"
+        else
+            echo "❌ XRDP service: Not running"
+        fi
+        
+        # Check VNC
+        if pgrep -f "vncserver" > /dev/null; then
+            echo "✅ VNC server: Running"
+        else
+            echo "❌ VNC server: Not running"
+        fi
+        
+        # Check listening ports
+        echo "🔍 Checking listening ports..."
+        if netstat -ln | grep -q ":3389"; then
+            echo "✅ RDP port 3389: Listening"
+        else
+            echo "❌ RDP port 3389: Not listening"
+        fi
+        
+        if netstat -ln | grep -q ":5901"; then
+            echo "✅ VNC port 5901: Listening"
+        else
+            echo "❌ VNC port 5901: Not listening"
+        fi
+
+    - name: 🔑 Connection Details
+      run: |
+        echo "=================================="
+        echo "🐧  LINUX RDP CONNECTION DETAILS"
+        echo "=================================="
+        echo ""
+        echo "🥇 Method 1 - RDP via LocalTunnel:"
+        echo "   Server: Check 'RDP Connection' in logs above"
+        echo "   Username: rdpuser"
+        echo "   Password: LinuxRDP123!"
+        echo "   Use: Remote Desktop Connection"
+        echo ""
+        echo "🥈 Method 2 - VNC via LocalTunnel:"
+        echo "   Server: Check 'VNC Connection' in logs above"
+        echo "   Password: tigervnc"
+        echo "   Use: TigerVNC Viewer"
+        echo ""
+        echo "🥉 Method 3 - RDP via SSH:"
+        echo "   Server: Check 'SSH RDP Tunnel' in logs above"
+        echo "   Username: rdpuser"
+        echo "   Password: LinuxRDP123!"
+        echo ""
+        echo "🔧 Method 4 - VNC via SSH:"
+        echo "   Server: Check 'SSH VNC Tunnel' in logs above"
+        echo "   Password: tigervnc"
+        echo ""
+        echo "=================================="
+        echo "📋 Desktop Environment: XFCE4"
+        echo "📋 Installed Software:"
+        echo "   • Firefox Browser"
+        echo "   • Chromium Browser"
+        echo "   • Text Editors (gedit, nano, vim)"
+        echo "   • File Manager (Thunar)"
+        echo "   • Development Tools (git, python3, nodejs)"
+        echo "=================================="
+        echo "🎯 Recommended: Try RDP first, then VNC"
+        echo "=================================="
+
+    - name: 🔄 Keep Session Active
+      run: |
+        echo "🟢 Linux Desktop Session Active!"
+        echo "⏰ Started at: $(date '+%Y-%m-%d %H:%M:%S')"
+        echo "🐧 XFCE Desktop Environment ready!"
+        echo ""
+        
+        # Keep session alive for 6 hours
+        END_TIME=$(($(date +%s) + 21600))  # 6 hours = 21600 seconds
+        
+        while [ $(date +%s) -lt $END_TIME ]; do
+            REMAINING=$((END_TIME - $(date +%s)))
+            HOURS=$((REMAINING / 3600))
+            MINUTES=$(((REMAINING % 3600) / 60))
+            
+            echo "🟢 Session Active - Time Remaining: $HOURS hours $MINUTES minutes"
+            echo "🐧 Linux Desktop ready for connection!"
+            
+            sleep 300  # Check every 5 minutes
+        done
+        
+        echo "⏰ Session ended. Run workflow again for new session!"
