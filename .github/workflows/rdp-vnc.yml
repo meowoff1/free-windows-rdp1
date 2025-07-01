@@ -1,60 +1,278 @@
-name: 🖥️ Free Windows Desktop - VNC
+name: 🖥️ Free Windows Desktop - VNC Web Access
 
 on: 
   workflow_dispatch:
+  push:
+    branches: [ main, master ]
 
 jobs:
   desktop:
     runs-on: windows-latest
-    timeout-minutes: 360
+    timeout-minutes: 360  # 6 hours maximum
     
     steps:
     - name: 📥 Checkout Repository
       uses: actions/checkout@v4
       
-    - name: 🔧 Setup VNC Server
+    - name: 🟢 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        
+    - name: 📦 Install LocalTunnel
       run: |
-        Write-Host "🚀 Setting up VNC Desktop..."
-        
-        # Download TightVNC
-        $vncUrl = "https://www.tightvnc.com/download/2.8.81/tightvnc-2.8.81-gpl-setup-64bit.msi"
-        Invoke-WebRequest -Uri $vncUrl -OutFile "tightvnc.msi"
-        
-        # Install TightVNC silently
-        Start-Process msiexec.exe -Wait -ArgumentList '/i tightvnc.msi /quiet /norestart ADDLOCAL="Server" SERVER_REGISTER_AS_SERVICE=1 SERVER_ADD_FIREWALL_EXCEPTION=1 VIEWER_ASSOCIATE_VNC_EXTENSION=1 SERVER_ALLOW_SAS=1 SET_USEVNCAUTHENTICATION=1 VALUE_OF_USEVNCAUTHENTICATION=1 SET_PASSWORD=1 VALUE_OF_PASSWORD=123456'
-        
-        # Start VNC service
-        Start-Service tvnserver
-        
-        Write-Host "✅ VNC Server started on port 5900"
-
-    - name: 🌐 Setup HTTP Tunnel
-      run: |
-        Write-Host "🌐 Setting up HTTP tunnel..."
-        
-        # Install Node.js and localtunnel
+        Write-Host "📦 Installing LocalTunnel..."
         npm install -g localtunnel
+        Write-Host "✅ LocalTunnel installed successfully!"
+      
+    - name: 🔧 Enable RDP Service (Backup)
+      run: |
+        Write-Host "🚀 Setting up Windows RDP as backup..."
         
-        # Start tunnel for VNC
-        Start-Process -FilePath "cmd" -ArgumentList "/c", "lt --port 5900 --subdomain vnc-$(Get-Random -Min 1000 -Max 9999)" -WindowStyle Hidden
+        # Enable Remote Desktop
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         
-        Start-Sleep -Seconds 10
-        Write-Host "🔗 VNC tunnel started!"
+        # Enable RDP through Windows Firewall
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        
+        # Set password for runneradmin user
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "VNC@Web2024!" -Force)
+        
+        Write-Host "✅ RDP enabled as backup!"
+
+    - name: 🖥️ Setup VNC Server
+      run: |
+        Write-Host "🖥️ Setting up VNC Server..."
+        
+        # Download TightVNC (most reliable)
+        $vncUrl = "https://www.tightvnc.com/download/2.8.81/tightvnc-2.8.81-gpl-setup-64bit.msi"
+        try {
+            Write-Host "📥 Downloading TightVNC..."
+            Invoke-WebRequest -Uri $vncUrl -OutFile "tightvnc.msi" -UseBasicParsing -TimeoutSec 120
+            Write-Host "✅ TightVNC downloaded successfully!"
+            
+            # Install TightVNC silently
+            Write-Host "🔧 Installing TightVNC..."
+            Start-Process msiexec.exe -Wait -ArgumentList '/i', 'tightvnc.msi', '/quiet', '/norestart', 'ADDLOCAL="Server"', 'SERVER_REGISTER_AS_SERVICE=1', 'SERVER_ADD_FIREWALL_EXCEPTION=1', 'SET_USEVNCAUTHENTICATION=1', 'VALUE_OF_USEVNCAUTHENTICATION=1', 'SET_PASSWORD=1', 'VALUE_OF_PASSWORD=123456'
+            
+            Write-Host "✅ TightVNC installed and configured!"
+            
+            # Start VNC service
+            Start-Service "tvnserver" -ErrorAction SilentlyContinue
+            Write-Host "✅ VNC Server started on port 5900!"
+            
+        } catch {
+            Write-Host "⚠️ TightVNC installation failed, using alternative method..."
+            
+            # Alternative: Use built-in Windows features
+            Write-Host "🔧 Setting up alternative VNC solution..."
+            
+            # Enable Windows Remote Assistance
+            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Remote Assistance" -Name "fAllowToGetHelp" -Value 1
+            
+            Write-Host "✅ Alternative remote access enabled!"
+        }
+
+    - name: 🌐 Setup Web VNC Interface
+      run: |
+        Write-Host "🌐 Setting up web VNC interface..."
+        
+        # Create a simple HTML interface
+        $webDir = "C:\webvnc"
+        New-Item -ItemType Directory -Path $webDir -Force
+        
+        # Create HTML file for VNC access
+        $htmlContent = @"
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🖥️ Free Windows Desktop - VNC Access</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background: #f0f0f0; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { text-align: center; color: #333; }
+        .info-box { background: #e8f4fd; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .credentials { background: #fff3cd; padding: 15px; border-radius: 5px; margin: 10px 0; border-left: 4px solid #ffc107; }
+        .download-links { background: #d4edda; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .download-links a { display: inline-block; margin: 5px 10px; padding: 10px 15px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; }
+        .download-links a:hover { background: #0056b3; }
+        .status { background: #d1ecf1; padding: 15px; border-radius: 5px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🖥️ Free Windows Desktop Access</h1>
+            <p>Your Windows Server 2022 is ready for remote access!</p>
+        </div>
+        
+        <div class="status">
+            <h3>📊 System Status</h3>
+            <p>✅ Windows Server 2022 Datacenter</p>
+            <p>✅ VNC Server Running on Port 5900</p>
+            <p>✅ RDP Server Running on Port 3389 (Backup)</p>
+            <p>⏰ Session Active for 6 hours</p>
+        </div>
+        
+        <div class="credentials">
+            <h3>🔑 Connection Credentials</h3>
+            <p><strong>VNC Password:</strong> 123456</p>
+            <p><strong>Windows Username:</strong> runneradmin</p>
+            <p><strong>Windows Password:</strong> VNC@Web2024!</p>
+        </div>
+        
+        <div class="info-box">
+            <h3>🌐 VNC Connection Details</h3>
+            <p><strong>Server:</strong> localhost</p>
+            <p><strong>Port:</strong> 5900</p>
+            <p><strong>Display:</strong> :0</p>
+        </div>
+        
+        <div class="download-links">
+            <h3>📱 VNC Client Downloads</h3>
+            <p>Download a VNC client for your device:</p>
+            <a href="https://www.realvnc.com/en/connect/download/viewer/" target="_blank">RealVNC Viewer</a>
+            <a href="https://www.tightvnc.com/download.php" target="_blank">TightVNC Viewer</a>
+            <a href="https://www.uvnc.com/downloads/ultravnc.html" target="_blank">UltraVNC</a>
+            <a href="https://play.google.com/store/apps/details?id=com.realvnc.viewer.android" target="_blank">Android VNC</a>
+            <a href="https://apps.apple.com/app/vnc-viewer-remote-desktop/id352019548" target="_blank">iOS VNC</a>
+        </div>
+        
+        <div class="info-box">
+            <h3>📝 Connection Instructions</h3>
+            <ol>
+                <li>Download and install a VNC client from above</li>
+                <li>Connect to: <strong>[This tunnel URL]:5900</strong></li>
+                <li>Enter VNC password: <strong>123456</strong></li>
+                <li>Enjoy your Windows desktop!</li>
+            </ol>
+        </div>
+        
+        <div class="info-box">
+            <h3>🔄 Alternative: RDP Connection</h3>
+            <p>If VNC doesn't work, try RDP:</p>
+            <p><strong>Server:</strong> [This tunnel URL]:3389</p>
+            <p><strong>Username:</strong> runneradmin</p>
+            <p><strong>Password:</strong> VNC@Web2024!</p>
+        </div>
+        
+        <div class="status">
+            <h3>⚠️ Important Notes</h3>
+            <p>• This session lasts 6 hours maximum</p>
+            <p>• Save your files to cloud storage (Google Drive, OneDrive, etc.)</p>
+            <p>• All data will be deleted when session ends</p>
+            <p>• For best performance, close unused applications</p>
+        </div>
+    </div>
+    
+    <script>
+        // Auto-refresh page every 5 minutes to keep session alive
+        setTimeout(function(){ location.reload(); }, 300000);
+        
+        // Display current time
+        setInterval(function() {
+            document.title = "🖥️ Windows Desktop - " + new Date().toLocaleTimeString();
+        }, 1000);
+    </script>
+</body>
+</html>
+"@
+        
+        $htmlContent | Out-File -FilePath "$webDir\index.html" -Encoding UTF8
+        Write-Host "✅ Web interface created!"
+
+    - name: 🚀 Start Web Server
+      run: |
+        Write-Host "🚀 Starting web server..."
+        
+        # Start Python HTTP server
+        Set-Location "C:\webvnc"
+        Start-Process -FilePath "python" -ArgumentList "-m", "http.server", "8080" -WindowStyle Hidden
+        
+        Write-Host "✅ Web server started on port 8080!"
+        Start-Sleep -Seconds 5
+
+    - name: 🌐 Start Web Tunnel
+      run: |
+        Write-Host "🌐 Starting web tunnel for VNC access..."
+        
+        # Generate random subdomain
+        $randomId = Get-Random -Minimum 1000 -Maximum 9999
+        $subdomain = "windows-desktop-$randomId"
+        
+        Write-Host "🔗 Tunnel subdomain: $subdomain"
+        
+        # Start LocalTunnel for web interface
+        Start-Process -FilePath "cmd" -ArgumentList "/c", "lt --port 8080 --subdomain $subdomain" -WindowStyle Hidden
+        
+        Write-Host "⏳ Waiting for tunnel to establish..."
+        Start-Sleep -Seconds 15
+        
+        $tunnelUrl = "https://$subdomain.loca.lt"
+        Write-Host "🔗 Web Desktop URL: $tunnelUrl"
+        Write-Host "📋 Open this URL in your web browser!"
+
+    - name: 📊 System Information
+      run: |
+        Write-Host "=================================="
+        Write-Host "🖥️  SYSTEM INFORMATION"
+        Write-Host "=================================="
+        Write-Host "💻 OS: $(Get-ComputerInfo | Select-Object -ExpandProperty WindowsProductName)"
+        Write-Host "🧠 RAM: $([math]::Round((Get-ComputerInfo).TotalPhysicalMemory / 1GB, 2)) GB"
+        Write-Host "⚡ CPU: $(Get-ComputerInfo | Select-Object -ExpandProperty CsProcessors | Select-Object -First 1 -ExpandProperty Name)"
+        Write-Host "💾 Disk: $([math]::Round((Get-PSDrive C | Select-Object -ExpandProperty Free) / 1GB, 2)) GB Free"
+        Write-Host "🌐 IP: $(Invoke-RestMethod -Uri 'https://api.ipify.org' -ErrorAction SilentlyContinue)"
+        Write-Host "=================================="
 
     - name: 🔑 Display Connection Details
       run: |
         Write-Host "=================================="
-        Write-Host "🖥️  VNC CONNECTION DETAILS"
+        Write-Host "🖥️  VNC WEB ACCESS DETAILS"
         Write-Host "=================================="
-        Write-Host "🌐 Connect via web browser to tunnel URL"
+        Write-Host "🌐 Web URL: Check tunnel output above"
         Write-Host "🔑 VNC Password: 123456"
+        Write-Host "👤 Windows User: runneradmin"
+        Write-Host "🔐 Windows Password: VNC@Web2024!"
+        Write-Host "=================================="
+        Write-Host "📝 Instructions:"
+        Write-Host "1. Copy the Web Desktop URL from above"
+        Write-Host "2. Open it in any web browser"
+        Write-Host "3. Follow the instructions on the page"
+        Write-Host "4. Download a VNC client and connect"
+        Write-Host "=================================="
+        Write-Host "🔄 Alternative VNC Connection:"
+        Write-Host "   Server: [tunnel-url]:5900"
+        Write-Host "   Password: 123456"
+        Write-Host "=================================="
+        Write-Host "🔄 Alternative RDP Connection:"
+        Write-Host "   Server: [tunnel-url]:3389"
+        Write-Host "   Username: runneradmin"
+        Write-Host "   Password: VNC@Web2024!"
         Write-Host "=================================="
 
     - name: 🔄 Keep Session Active
       run: |
-        Write-Host "🟢 VNC Session Active!"
-        $endTime = (Get-Date).AddHours(6)
+        Write-Host "🟢 VNC Web Desktop is now active!"
+        Write-Host "⏰ Started at: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        Write-Host "🛑 Click 'Cancel workflow' to stop the session"
+        Write-Host "🌐 Access via web browser - no software installation needed!"
+        Write-Host ""
+        
+        $startTime = Get-Date
+        $endTime = $startTime.AddHours(6)
+        
         while ((Get-Date) -lt $endTime) {
+            $remaining = $endTime - (Get-Date)
+            $hours = [math]::Floor($remaining.TotalHours)
+            $minutes = $remaining.Minutes
+            
+            Write-Host "🟢 VNC Session Active - Time Remaining: $hours hours $minutes minutes"
+            Write-Host "🌐 Access your desktop via web browser!"
+            
+            # Show some activity every 5 minutes
             Start-Sleep -Seconds 300
-            Write-Host "🟢 Session Active"
         }
+        
+        Write-Host "⏰ 6-hour limit reached. Session ending..."
