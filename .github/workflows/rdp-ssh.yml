@@ -35,64 +35,26 @@ jobs:
         
         Write-Host "✅ RDP enabled successfully!"
 
-    - name: 📦 Setup SSH Client
-      run: |
-        Write-Host "🔧 Setting up SSH client..."
-        
-        # Enable OpenSSH Client (should be available by default)
-        Get-WindowsCapability -Online | Where-Object Name -like 'OpenSSH.Client*'
-        
-        Write-Host "✅ SSH client ready!"
-
-    - name: 🌐 Setup SSH Tunnel via serveo.net
+    - name: 🌐 Setup Serveo SSH Tunnel
       run: |
         Write-Host "🌐 Setting up SSH tunnel via serveo.net..."
         
-        # Generate random port for tunnel
-        $randomPort = Get-Random -Minimum 20000 -Maximum 30000
+        # Generate random subdomain
+        $randomId = Get-Random -Minimum 1000 -Maximum 9999
+        $subdomain = "rdp-$randomId"
         
-        Write-Host "🔗 Setting up tunnel on port: $randomPort"
+        Write-Host "🔗 Tunnel subdomain: $subdomain"
+        Write-Host "🔗 Full URL: $subdomain.serveo.net:3389"
         
-        # Create SSH tunnel using serveo.net (free SSH tunneling service)
-        $sshCommand = "ssh -o StrictHostKeyChecking=no -R $randomPort`:localhost:3389 serveo.net"
-        
+        # Start SSH tunnel using serveo.net
         Write-Host "🚀 Starting SSH tunnel..."
-        Write-Host "Command: $sshCommand"
-        
-        # Start SSH tunnel in background
-        Start-Process -FilePath "ssh" -ArgumentList "-o", "StrictHostKeyChecking=no", "-R", "$randomPort`:localhost:3389", "serveo.net" -WindowStyle Hidden
+        Start-Process -FilePath "ssh" -ArgumentList "-o", "StrictHostKeyChecking=no", "-R", "$subdomain`:3389:localhost:3389", "serveo.net" -WindowStyle Hidden
         
         Write-Host "⏳ Waiting for tunnel to establish..."
-        Start-Sleep -Seconds 15
+        Start-Sleep -Seconds 20
         
-        $tunnelUrl = "serveo.net:$randomPort"
-        Write-Host "🔗 RDP Tunnel: $tunnelUrl"
-        Write-Host "📋 Connect to: $tunnelUrl"
-
-    - name: 🌐 Alternative: localhost.run tunnel
-      run: |
-        Write-Host "🌐 Setting up alternative tunnel via localhost.run..."
-        
-        # Alternative SSH tunnel using localhost.run
-        $sshCommand2 = "ssh -o StrictHostKeyChecking=no -R 80:localhost:3389 nokey@localhost.run"
-        
-        Write-Host "🚀 Starting localhost.run tunnel..."
-        Start-Process -FilePath "ssh" -ArgumentList "-o", "StrictHostKeyChecking=no", "-R", "80:localhost:3389", "nokey@localhost.run" -WindowStyle Hidden
-        
-        Write-Host "⏳ Alternative tunnel started..."
-        Start-Sleep -Seconds 10
-
-    - name: 📊 System Information
-      run: |
-        Write-Host "=================================="
-        Write-Host "🖥️  SYSTEM INFORMATION"
-        Write-Host "=================================="
-        Write-Host "💻 OS: $(Get-ComputerInfo | Select-Object -ExpandProperty WindowsProductName)"
-        Write-Host "🧠 RAM: $([math]::Round((Get-ComputerInfo).TotalPhysicalMemory / 1GB, 2)) GB"
-        Write-Host "⚡ CPU: $(Get-ComputerInfo | Select-Object -ExpandProperty CsProcessors | Select-Object -First 1 -ExpandProperty Name)"
-        Write-Host "💾 Disk: $([math]::Round((Get-PSDrive C | Select-Object -ExpandProperty Free) / 1GB, 2)) GB Free"
-        Write-Host "🌐 IP: $(Invoke-RestMethod -Uri 'https://api.ipify.org' -ErrorAction SilentlyContinue)"
-        Write-Host "=================================="
+        Write-Host "🔗 RDP Connection: $subdomain.serveo.net"
+        Write-Host "📋 Port: 3389"
 
     - name: 🔑 Display Connection Details
       run: |
@@ -101,16 +63,13 @@ jobs:
         Write-Host "=================================="
         Write-Host "👤 Username: runneradmin"
         Write-Host "🔑 Password: RDP@SSH2024!"
-        Write-Host "🌐 Tunnel: Check SSH tunnel output above"
+        Write-Host "🌐 Server: Check SSH tunnel output above"
+        Write-Host "🔌 Port: 3389"
         Write-Host "=================================="
         Write-Host "📝 Instructions:"
-        Write-Host "1. Copy the tunnel URL from above"
+        Write-Host "1. Copy the server name from SSH tunnel output"
         Write-Host "2. Use any RDP client to connect"
         Write-Host "3. Enter the credentials above"
-        Write-Host "=================================="
-        Write-Host "⚠️  Note: SSH tunnels may require manual setup"
-        Write-Host "⏰ Session Duration: 6 hours maximum"
-        Write-Host "🔄 Re-run this workflow for new session"
         Write-Host "=================================="
 
     - name: 🔄 Keep Session Active
@@ -135,4 +94,3 @@ jobs:
         }
         
         Write-Host "⏰ 6-hour limit reached. Session ending..."
-        Write-Host "🔄 Run the workflow again for a new session!"
